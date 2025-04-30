@@ -1,0 +1,322 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Apprenticeship Program</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js CDN (latest version) -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .chart-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #error-message {
+            display: none;
+            color: #dc2626;
+        }
+    </style>
+</head>
+<body class="p-6">
+    <!-- Header -->
+    <header class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-800">Community Apprenticeship Program</h1>
+        <p class="text-gray-600">Upload JSON data to visualize participant performance</p>
+    </header>
+
+    <!-- File Upload -->
+    <section class="mb-8">
+        <div class="chart-container max-w-md mx-auto">
+            <label for="file-upload" class="block text-lg font-semibold text-gray-700 mb-2">Upload JSON File</label>
+            <input id="file-upload" type="file" accept=".json" class="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100" />
+            <p id="error-message" class="mt-2 text-sm"></p>
+        </div>
+    </section>
+
+    <!-- KPI Cards -->
+    <section id="kpi-section" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8 hidden">
+        <div class="chart-container text-center">
+            <h3 class="text-lg font-semibold text-gray-700">Total Participants</h3>
+            <p id="kpi-participants" class="text-2xl font-bold text-blue-600">0</p>
+        </div>
+        <div class="chart-container text-center">
+            <h3 class="text-lg font-semibold text-gray-700">Avg. Attendance</h3>
+            <p id="kpi-attendance" class="text-2xl font-bold text-blue-600">0%</p>
+        </div>
+        <div class="chart-container text-center">
+            <h3 class="text-lg font-semibold text-gray-700">Avg. Workshop Score</h3>
+            <p id="kpi-score" class="text-2xl font-bold text-blue-600">0</p>
+        </div>
+        <div class="chart-container text-center">
+            <h3 class="text-lg font-semibold text-gray-700">Avg. Feedback Score</h3>
+            <p id="kpi-feedback" class="text-2xl font-bold text-blue-600">0</p>
+        </div>
+        <div class="chart-container text-center">
+            <h3 class="text-lg font-semibold text-gray-700">% with Mentors</h3>
+            <p id="kpi-mentors" class="text-2xl font-bold text-blue-600">0%</p>
+        </div>
+    </section>
+
+    <!-- Charts -->
+    <section id="charts-section" class="grid grid-cols-1 lg:grid-cols-2 gap-6 hidden">
+        <!-- Grouped Bar Chart: Workshop Scores by Mentor Status -->
+        <div class="chart-container">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Average Workshop Scores by Mentor Status</h3>
+            <div id="bar-chart"></div>
+        </div>
+
+        <!-- Box Plot: Feedback Score Distribution -->
+        <div class="chart-container">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Feedback Score Distribution</h3>
+            <div id="box-plot"></div>
+        </div>
+
+        <!-- Scatter Plot: Attendance vs. Workshop Scores -->
+        <div class="chart-container">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Attendance vs. Workshop Scores</h3>
+            <div id="scatter-plot"></div>
+        </div>
+
+        <!-- Line Chart: Age-Based Performance Trends -->
+        <div class="chart-container">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Performance Trends by Age</h3>
+            <div id="line-chart"></div>
+        </div>
+    </section>
+
+    <!-- JavaScript -->
+    <script>
+        // File upload handler
+        document.getElementById('file-upload').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    processData(data);
+                } catch (err) {
+                    showError('Invalid JSON file. Please upload a valid JSON file with the correct structure.');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('kpi-section').classList.add('hidden');
+            document.getElementById('charts-section').classList.add('hidden');
+        }
+
+        // Process uploaded data and generate visualizations
+        function processData(data) {
+            // Filter valid participant data and ensure numeric fields
+            const participants = data
+                .filter(row => 
+                    row[''] && row[''].startsWith('P') && 
+                    row.__1 && 
+                    typeof row.__2 === 'number' && 
+                    typeof row.__3 === 'number' && 
+                    typeof row.__4 === 'number' && 
+                    row.__5 && 
+                    typeof row.__6 === 'number'
+                )
+                .map(row => ({
+                    id: row[''],
+                    name: row.__1,
+                    age: Number(row.__2),
+                    attendance: Number(row.__3),
+                    score: Number(row.__4),
+                    mentor: row.__5,
+                    feedback: Number(row.__6)
+                }));
+
+            if (participants.length === 0) {
+                showError('No valid participant data found in the JSON file. Ensure the JSON contains objects with keys "", "__1" to "__6", and numeric values for Age, Attendance, Workshop Scores, and Feedback Score.');
+                return;
+            }
+
+            // Clear error message and show sections
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('kpi-section').classList.remove('hidden');
+            document.getElementById('charts-section').classList.remove('hidden');
+
+            // Calculate KPIs with fallback values
+            const totalParticipants = participants.length;
+            const avgAttendance = totalParticipants > 0 ? participants.reduce((sum, p) => sum + p.attendance, 0) / totalParticipants : 0;
+            const avgScore = totalParticipants > 0 ? participants.reduce((sum, p) => sum + p.score, 0) / totalParticipants : 0;
+            const avgFeedback = totalParticipants > 0 ? participants.reduce((sum, p) => sum + p.feedback, 0) / totalParticipants : 0;
+            const mentorPercent = totalParticipants > 0 ? (participants.filter(p => p.mentor === 'Yes').length / totalParticipants) * 100 : 0;
+
+            // Update KPI cards
+            document.getElementById('kpi-participants').textContent = totalParticipants;
+            document.getElementById('kpi-attendance').textContent = `${avgAttendance.toFixed(2)}%`;
+            document.getElementById('kpi-score').textContent = avgScore.toFixed(2);
+            document.getElementById('kpi-feedback').textContent = avgFeedback.toFixed(2);
+            document.getElementById('kpi-mentors').textContent = `${mentorPercent.toFixed(0)}%`;
+
+            // Process data for visualizations
+            const mentorYes = participants.filter(p => p.mentor === 'Yes');
+            const mentorNo = participants.filter(p => p.mentor === 'No');
+            const avgScoresMentorYes = mentorYes.length > 0 ? mentorYes.reduce((sum, p) => sum + p.score, 0) / mentorYes.length : 0;
+            const avgScoresMentorNo = mentorNo.length > 0 ? mentorNo.reduce((sum, p) => sum + p.score, 0) / mentorNo.length : 0;
+
+            const feedbackScores = participants.map(p => p.feedback);
+            const ages = [...new Set(participants.map(p => p.age))].sort((a, b) => a - b);
+            const avgScoresByAge = ages.map(age => {
+                const group = participants.filter(p => p.age === age);
+                return group.length > 0 ? group.reduce((sum, p) => sum + p.score, 0) / group.length : 0;
+            });
+            const avgFeedbackByAge = ages.map(age => {
+                const group = participants.filter(p => p.age === age);
+                return group.length > 0 ? group.reduce((sum, p) => sum + p.feedback, 0) / group.length : 0;
+            });
+
+            // 1. Grouped Bar Chart
+            Plotly.newPlot('bar-chart', [{
+                x: ['Mentor Assigned', 'No Mentor'],
+                y: [avgScoresMentorYes, avgScoresMentorNo],
+                type: 'bar',
+                marker: { color: ['#3b82f6', '#ef4444'] },
+                text: [avgScoresMentorYes.toFixed(2), avgScoresMentorNo.toFixed(2)],
+                textposition: 'auto'
+            }], {
+                title: { text: '', font: { size: 16 } },
+                xaxis: { title: '' },
+                yaxis: { title: 'Average Workshop Score', range: [0, 100] },
+                margin: { t: 20 },
+                showlegend: false
+            }, { responsive: true });
+
+            // 2. Box Plot
+            Plotly.newPlot('box-plot', [{
+                y: feedbackScores,
+                type: 'box',
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: -1.8,
+                marker: { color: '#10b981' },
+                name: 'Feedback Scores'
+            }], {
+                title: { text: '', font: { size: 16 } },
+                yaxis: { title: 'Feedback Score', range: [3.5, 5.5] },
+                margin: { t: 20 },
+                showlegend: false
+            }, { responsive: true });
+
+            // 3. Scatter Plot
+            Plotly.newPlot('scatter-plot', [
+                {
+                    x: mentorYes.map(p => p.attendance),
+                    y: mentorYes.map(p => p.score),
+                    text: mentorYes.map(p => p.name),
+                    mode: 'markers',
+                    name: 'Mentor Assigned',
+                    marker: { color: '#3b82f6', size: 10 }
+                },
+                {
+                    x: mentorNo.map(p => p.attendance),
+                    y: mentorNo.map(p => p.score),
+                    text: mentorNo.map(p => p.name),
+                    mode: 'markers',
+                    name: 'No Mentor',
+                    marker: { color: '#ef4444', size: 10 }
+                }
+            ], {
+                title: { text: '', font: { size: 16 } },
+                xaxis: { title: 'Attendance (%)', range: [80, 100] },
+                yaxis: { title: 'Workshop Score', range: [80, 100] },
+                margin: { t: 20 },
+                showlegend: true
+            }, { responsive: true });
+
+            // 4. Line Chart
+            Plotly.newPlot('line-chart', [
+                {
+                    x: ages,
+                    y: avgScoresByAge,
+                    mode: 'lines+markers',
+                    name: 'Avg. Workshop Score',
+                    line: { color: '#3b82f6' }
+                },
+                {
+                    x: ages,
+                    y: avgFeedbackByAge,
+                    mode: 'lines+markers',
+                    name: 'Avg. Feedback Score',
+                    line: { color: '#10b981' },
+                    yaxis: 'y2'
+                }
+            ], {
+                title: { text: '', font: { size: 16 } },
+                xaxis: { title: 'Age' },
+                yaxis: { title: 'Workshop Score', range: [80, 100] },
+                yaxis2: {
+                    title: 'Feedback Score',
+                    range: [3.5, 5.5],
+                    overlaying: 'y',
+                    side: 'right'
+                },
+                margin: { t: 20 },
+                showlegend: true
+            }, { responsive: true });
+        }
+    </script>
+</body>
+</html>
